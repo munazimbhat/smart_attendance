@@ -1,0 +1,286 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= ENUMS =============
+
+enum Role {
+  ADMIN
+  HOD
+  TEACHER
+  STUDENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEFT_EARLY
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveType {
+  MEDICAL
+  PERSONAL
+  CASUAL
+  EMERGENCY
+}
+
+// ============= USER MODELS =============
+
+model User {
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  password              String
+  firstName             String
+  lastName              String
+  role                  Role
+  department            String
+  subject               String?
+  semester              Int?
+  phone                 String?
+  avatar                String?
+  registrationNumber    String?   @unique
+  lastLogin             DateTime?
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  faceRegistrations     FaceRegistration[]
+  teacherClasses        Class[]            @relation("TeacherClasses")
+  studentClasses        StudentClass[]
+  attendanceRecords     Attendance[]
+  leaveRequests         Leave[]
+  createdLeaves         Leave[]            @relation("CreatedByTeacher")
+  notifications         Notification[]
+  timetableEntries      Timetable[]
+  securityAlerts        SecurityAlert[]
+
+  @@index([email])
+  @@index([role])
+  @@index([department])
+}
+
+// ============= FACE RECOGNITION =============
+
+model FaceRegistration {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Face embedding (encoded as JSON string)
+  embedding             String    @db.Text
+  imageUrl              String?
+  quality               Float     @default(0.0)  // Quality score 0-100
+  registeredAt          DateTime  @default(now())
+  
+  @@unique([userId])
+  @@index([userId])
+}
+
+// ============= CLASSES & SECTIONS =============
+
+model Department_Info {
+  id                    String    @id @default(cuid())
+  name                  String    @unique
+  hodId                 String?
+  createdAt             DateTime  @default(now())
+  
+  @@index([hodId])
+}
+
+model Class {
+  id                    String    @id @default(cuid())
+  name                  String
+  section               String
+  subject               String
+  department            String
+  semester              Int
+  teacherId             String
+  teacher               User      @relation("TeacherClasses", fields: [teacherId], references: [id], onDelete: SetNull)
+  
+  studentClasses        StudentClass[]
+  attendanceRecords     Attendance[]
+  timetableEntries      Timetable[]
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([name, section, subject, department])
+  @@index([teacherId])
+  @@index([department])
+}
+
+model StudentClass {
+  id                    String    @id @default(cuid())
+  studentId             String
+  classId               String
+  student               User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class                 Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  enrolledAt            DateTime  @default(now())
+  
+  @@unique([studentId, classId])
+  @@index([studentId])
+  @@index([classId])
+}
+
+// ============= TIMETABLE =============
+
+model Timetable {
+  id                    String    @id @default(cuid())
+  classId               String
+  class                 Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  teacherId             String
+  teacher               User      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  dayOfWeek             Int       // 0=Monday, 6=Sunday
+  startTime             DateTime  // Time only (stored as datetime)
+  endTime               DateTime  // Time only
+  room                  String?
+  building              String?
+  
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([classId, teacherId, dayOfWeek, startTime])
+  @@index([classId])
+  @@index([teacherId])
+}
+
+// ============= ATTENDANCE =============
+
+model Attendance {
+  id                    String    @id @default(cuid())
+  studentId             String
+  student               User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId               String
+  class                 Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  date                  DateTime
+  checkInTime           DateTime?
+  checkOutTime          DateTime?
+  status                AttendanceStatus
+  confidence            Float?    // Face recognition confidence 0-1
+  method                String    @default("FACE_RECOGNITION")  // FACE_RECOGNITION, MANUAL, BIOMETRIC
+  remarks               String?
+  faceImageUrl          String?   // Snapshot from attendance
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([studentId, classId, date])
+  @@index([studentId])
+  @@index([classId])
+  @@index([date])
+  @@index([status])
+}
+
+// ============= LEAVE MANAGEMENT =============
+
+model Leave {
+  id                    String    @id @default(cuid())
+  studentId             String
+  student               User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdByTeacherId    String?
+  createdByTeacher      User?     @relation("CreatedByTeacher", fields: [createdByTeacherId], references: [id])
+  
+  leaveType             LeaveType
+  reason                String    @db.Text
+  startDate             DateTime
+  endDate               DateTime
+  numberOfDays          Int
+  
+  documentUrl           String?   // For medical certificates, etc.
+  status                LeaveStatus @default(PENDING)
+  approvedBy            String?
+  approvalDate          DateTime?
+  rejectionReason       String?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([studentId])
+  @@index([status])
+  @@index([startDate])
+  @@index([createdByTeacherId])
+}
+
+// ============= SECURITY & ALERTS =============
+
+model SecurityAlert {
+  id                    String    @id @default(cuid())
+  userId                String?
+  user                  User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  alertType             String    // PHOTO_SPOOF, MULTIPLE_FACES, UNKNOWN_FACE, RAPID_REENTRY, etc.
+  severity              String    @default("MEDIUM")  // LOW, MEDIUM, HIGH
+  description           String    @db.Text
+  snapshotUrl           String?
+  isResolved            Boolean   @default(false)
+  
+  createdAt             DateTime  @default(now())
+  resolvedAt            DateTime?
+  
+  @@index([userId])
+  @@index([alertType])
+  @@index([isResolved])
+  @@index([createdAt])
+}
+
+// ============= NOTIFICATIONS =============
+
+model Notification {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title                 String
+  message               String    @db.Text
+  type                  String    // LOW_ATTENDANCE, LEAVE_STATUS, SYSTEM_ALERT, CLASS_REMINDER
+  related               String?   // Related entity ID (e.g., leaveId, studentId)
+  isRead                Boolean   @default(false)
+  
+  createdAt             DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+}
+
+// ============= ANALYTICS & STATISTICS =============
+
+model AttendanceStats {
+  id                    String    @id @default(cuid())
+  studentId             String
+  classId               String
+  
+  totalClasses          Int       @default(0)
+  presentDays           Int       @default(0)
+  absentDays            Int       @default(0)
+  lateDays              Int       @default(0)
+  percentage            Float     @default(0.0)
+  
+  month                 Int
+  year                  Int
+  
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([studentId, classId, month, year])
+  @@index([studentId])
+  @@index([classId])
+}
