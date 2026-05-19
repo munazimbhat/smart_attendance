@@ -495,9 +495,9 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 📞 Support
 
-- 📧 Email: support@smartattendance.com
-- 💬 Discord: [Join Community](https://discord.gg/smartattendance)
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/smart-attendance/issues)
+- 📧 Email: munazimashraf@gmail.com
+
+- 🐛 Issues: [GitHub Issues](https://github.com/munazimbhat/smart-attendance/issues)
 
 ---
 
